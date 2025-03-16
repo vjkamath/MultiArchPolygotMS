@@ -1,24 +1,3 @@
-version: '3.8'
-services:
-  crypto-service:
-    build:
-      context: ./crypto-service
-      platforms:
-        - linux/arm64
-    ports:
-      - "8080:8080"
-    platform: linux/arm64
-
-  text-processor:
-    build:
-      context: ./text-processor
-      platforms:
-        - linux/amd64
-    ports:
-      - "3000:3000"
-    platform: linux/amd64
-
-
 version: 2.1
 
 orbs:
