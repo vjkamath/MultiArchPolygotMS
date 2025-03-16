@@ -45,12 +45,13 @@ jobs:
           platform: linux/amd64
 
       # Updated ECS deployment command
-      - aws-ecs/update-service:
+      - aws-ecs/deploy_service_update:
+          requires:
+            - aws-ecr/build_and_push_image
           cluster: "${ECS_CLUSTER_NAME}"
           container-image-name-updates: "container=${CONTAINER_NAME},tag=${CIRCLE_SHA1}"
           family: "${ECS_TASK_FAMILY}"
           service: "${ECS_SERVICE_NAME}"
-          force-new-deployment: true
 
 workflows:
   version: 2
