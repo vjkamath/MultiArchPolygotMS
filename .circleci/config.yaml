@@ -12,19 +12,6 @@ jobs:
       - setup_remote_docker:
           docker_layer_caching: true
 
-      # Build and test Go service
-      - run:
-          name: Build Go service
-          command: |
-            cd crypto-service
-            docker build --platform linux/arm64 -t crypto-service:${CIRCLE_SHA1} .
-
-      # Build and test Node.js service
-      - run:
-          name: Build Node.js service
-          command: |
-            cd text-processor
-            docker build --platform linux/amd64 -t text-processor:${CIRCLE_SHA1} .
 
   deploy:
     docker:
