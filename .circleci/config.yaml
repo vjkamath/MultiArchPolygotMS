@@ -59,6 +59,7 @@ workflows:
   build-test-deploy:
     jobs:
       - build-and-test
+          context: AWS_REGION
       - deploy:
           requires:
             - build-and-test
