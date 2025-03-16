@@ -33,7 +33,7 @@ jobs:
           name: Build and push crypto-service
           command: |
             cd nodejs-service
-            docker build --platform linux/arm64 -t ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${AWS_ECR_REPO_NAME}:crypto-service-${CIRCLE_SHA1} .
+            docker build --platform linux/arm64 -t ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${AWS_ECR_REPO_NAME}:nodejs-service-${CIRCLE_SHA1} .
             docker push ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${AWS_ECR_REPO_NAME}:crypto-service-${CIRCLE_SHA1}
 
       # Build and push text-processor
@@ -41,7 +41,7 @@ jobs:
           name: Build and push text-processor
           command: |
             cd python-service
-            docker build --platform linux/amd64 -t ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${AWS_ECR_REPO_NAME}:text-processor-${CIRCLE_SHA1} .
+            docker build --platform linux/amd64 -t ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${AWS_ECR_REPO_NAME}:python-processor-${CIRCLE_SHA1} .
             docker push ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${AWS_ECR_REPO_NAME}:text-processor-${CIRCLE_SHA1}
 
 workflows:
