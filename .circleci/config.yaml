@@ -1,8 +1,7 @@
 version: 2.1
 
 orbs:
-  aws-ecr: circleci/aws-ecr@6.15.3 # Using a more stable version
-  aws-ecs: circleci/aws-ecs@3.2
+  aws-ecr: circleci/aws-ecr@6.15.3
 
 jobs:
   build-and-test:
@@ -11,7 +10,6 @@ jobs:
     steps:
       - checkout
       - setup_remote_docker:
-          version: 20.10.14
           docker_layer_caching: true
 
       # Build and test Go service
@@ -34,7 +32,7 @@ jobs:
     steps:
       - checkout
       - setup_remote_docker:
-          version: 20.10.14
+          docker_layer_caching: true
       
       # Login to AWS ECR
       - run:
@@ -57,7 +55,6 @@ jobs:
             cd text-processor
             docker build --platform linux/amd64 -t ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${AWS_ECR_REPO_NAME}:text-processor-${CIRCLE_SHA1} .
             docker push ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${AWS_ECR_REPO_NAME}:text-processor-${CIRCLE_SHA1}
-
 
 workflows:
   version: 2
