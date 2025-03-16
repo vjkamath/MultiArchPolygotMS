@@ -18,14 +18,14 @@ jobs:
           name: Build Node.js service
           command: |
             cd nodejs-service
-            docker buildx --platform linux/arm64 -t nodejs-service:${CIRCLE_SHA1} .
+            docker buildx build --platform linux/arm64 -t nodejs-service:${CIRCLE_SHA1} .
       
       # Build python service
       - run:
           name: Build Python service
           command: |
             cd python-service
-            docker buildx --platform linux/amd64 -t python-service:${CIRCLE_SHA1} .
+            docker buildx build --platform linux/amd64 -t python-service:${CIRCLE_SHA1} .
 
   deploy:
     docker:
