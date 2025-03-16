@@ -58,12 +58,6 @@ jobs:
             docker build --platform linux/amd64 -t ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${AWS_ECR_REPO_NAME}:text-processor-${CIRCLE_SHA1} .
             docker push ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${AWS_ECR_REPO_NAME}:text-processor-${CIRCLE_SHA1}
 
-      # Update ECS service
-      - aws-ecs/deploy-service-update:
-          cluster-name: "${ECS_CLUSTER_NAME}"
-          container-image-name-updates: "container=${CONTAINER_NAME},tag=${CIRCLE_SHA1}"
-          family: "${ECS_TASK_FAMILY}"
-          service-name: "${ECS_SERVICE_NAME}"
 
 workflows:
   version: 2
