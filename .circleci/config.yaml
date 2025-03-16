@@ -1,7 +1,7 @@
 version: 2.1
 
 orbs:
-  aws-ecr: circleci/aws-ecr@7.3.0
+  aws-ecr: circleci/aws-ecr@6.15.3 # Using a more stable version
   aws-ecs: circleci/aws-ecs@3.2
 
 jobs:
@@ -36,25 +36,29 @@ jobs:
       - setup_remote_docker:
           version: 20.10.14
       
-      # Add AWS authentication
-      - aws-ecr/ecr-login
-      
+      # Login to AWS ECR
+      - run:
+          name: Login to AWS ECR
+          command: |
+            aws ecr get-login-password --region ${AWS_REGION} | docker login --username AWS --password-stdin ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com
+
       # Build and push crypto-service
-      - aws-ecr/build-and-push:
-          repo: "${AWS_ECR_REPO_NAME}"
-          tag: "crypto-service-${CIRCLE_SHA1}"
-          path: ./crypto-service
-          dockerfile: Dockerfile
-          platform: linux/arm64
+      - run:
+          name: Build and push crypto-service
+          command: |
+            cd crypto-service
+            docker build --platform linux/arm64 -t ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${AWS_ECR_REPO_NAME}:crypto-service-${CIRCLE_SHA1} .
+            docker push ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${AWS_ECR_REPO_NAME}:crypto-service-${CIRCLE_SHA1}
 
       # Build and push text-processor
-      - aws-ecr/build-and-push:
-          repo: "${AWS_ECR_REPO_NAME}"
-          tag: "text-processor-${CIRCLE_SHA1}"
-          path: ./text-processor
-          dockerfile: Dockerfile
-          platform: linux/amd64
+      - run:
+          name: Build and push text-processor
+          command: |
+            cd text-processor
+            docker build --platform linux/amd64 -t ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${AWS_ECR_REPO_NAME}:text-processor-${CIRCLE_SHA1} .
+            docker push ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${AWS_ECR_REPO_NAME}:text-processor-${CIRCLE_SHA1}
 
+      # Update ECS service
       - aws-ecs/deploy-service-update:
           cluster-name: "${ECS_CLUSTER_NAME}"
           container-image-name-updates: "container=${CONTAINER_NAME},tag=${CIRCLE_SHA1}"
