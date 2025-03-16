@@ -1,8 +1,8 @@
 version: 2.1
 
 orbs:
-  aws-ecr: circleci/aws-ecr@9.3.5 # use the AWS ECR orb
-  aws-ecs: circleci/aws-ecs@6.0.0 # use the AWS ECS orb
+  aws-ecr: circleci/aws-ecr@7.3.0
+  aws-ecs: circleci/aws-ecs@3.2
 
 jobs:
   build-and-test:
@@ -32,26 +32,34 @@ jobs:
     docker:
       - image: cimg/base:2023.03
     steps:
-      - aws-ecr/build-and-push-image:
+      - checkout
+      - setup_remote_docker:
+          version: 20.10.14
+      
+      # Add AWS authentication
+      - aws-ecr/ecr-login
+      
+      # Build and push crypto-service
+      - aws-ecr/build-and-push:
           repo: "${AWS_ECR_REPO_NAME}"
           tag: "crypto-service-${CIRCLE_SHA1}"
           path: ./crypto-service
+          dockerfile: Dockerfile
           platform: linux/arm64
 
-      - aws-ecr/build-and-push-image:
+      # Build and push text-processor
+      - aws-ecr/build-and-push:
           repo: "${AWS_ECR_REPO_NAME}"
           tag: "text-processor-${CIRCLE_SHA1}"
           path: ./text-processor
+          dockerfile: Dockerfile
           platform: linux/amd64
 
-      # Updated ECS deployment command
-      - aws-ecs/deploy_service_update:
-          requires:
-            - aws-ecr/build_and_push_image
-          cluster: "${ECS_CLUSTER_NAME}"
+      - aws-ecs/deploy-service-update:
+          cluster-name: "${ECS_CLUSTER_NAME}"
           container-image-name-updates: "container=${CONTAINER_NAME},tag=${CIRCLE_SHA1}"
           family: "${ECS_TASK_FAMILY}"
-          service: "${ECS_SERVICE_NAME}"
+          service-name: "${ECS_SERVICE_NAME}"
 
 workflows:
   version: 2
