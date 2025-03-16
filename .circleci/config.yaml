@@ -21,6 +21,16 @@ jobs:
       - checkout
       - setup_remote_docker:
           docker_layer_caching: true
+
+    # Debug AWS configuration
+      - run:
+          name: Debug AWS Configuration
+          command: |
+            echo "AWS Region: ${AWS_REGION}"
+            echo "AWS Account ID: ${AWS_ACCOUNT_ID}"
+            echo "ECR Repository: ${AWS_ECR_REPO_NAME}"
+
+
       
       # Login to AWS ECR
       - run:
