@@ -44,11 +44,13 @@ jobs:
           path: ./text-processor
           platform: linux/amd64
 
-      - aws-ecs/deploy-service-update:
-          cluster-name: "${ECS_CLUSTER_NAME}"
+      # Updated ECS deployment command
+      - aws-ecs/update-service:
+          cluster: "${ECS_CLUSTER_NAME}"
           container-image-name-updates: "container=${CONTAINER_NAME},tag=${CIRCLE_SHA1}"
           family: "${ECS_TASK_FAMILY}"
-          service-name: "${ECS_SERVICE_NAME}"
+          service: "${ECS_SERVICE_NAME}"
+          force-new-deployment: true
 
 workflows:
   version: 2
