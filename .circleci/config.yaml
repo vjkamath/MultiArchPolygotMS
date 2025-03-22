@@ -49,20 +49,22 @@ jobs:
             pip install awscli
             aws --version
             
-      # Configure AWS credentials for role assumption
+      # Configure AWS credentials directly with enhanced debugging
       - run:
-          name: Configure AWS credentials
+          name: Configure AWS credentials with debugging
           command: |
+            # Debug environment variables
+            echo "AWS_REGION environment variable: '${AWS_REGION}'"
+            echo "AWS_ACCOUNT_ID environment variable: '${AWS_ACCOUNT_ID}'"
+            echo "AWS_ECR_REPO_NAME environment variable: '${AWS_ECR_REPO_NAME}'"
+            echo "AWS_ACCESS_KEY_ID exists: $(if [ -n "${AWS_ACCESS_KEY_ID}" ]; then echo "YES"; else echo "NO"; fi)"
+            echo "AWS_SECRET_ACCESS_KEY exists: $(if [ -n "${AWS_SECRET_ACCESS_KEY}" ]; then echo "YES"; else echo "NO"; fi)"
+            
             # Create AWS config directory
             mkdir -p ~/.aws
             
-            # Create credentials file with role assumption
+            # Create credentials file with direct credentials
             echo "[default]" > ~/.aws/credentials
-            echo "role_arn = arn:aws:iam::${AWS_ACCOUNT_ID}:role/multiarch-polygot" >> ~/.aws/credentials
-            echo "source_profile = circleci" >> ~/.aws/credentials
-            echo "region = ${AWS_REGION}" >> ~/.aws/credentials
-            echo "" >> ~/.aws/credentials
-            echo "[circleci]" >> ~/.aws/credentials
             echo "aws_access_key_id = ${AWS_ACCESS_KEY_ID}" >> ~/.aws/credentials
             echo "aws_secret_access_key = ${AWS_SECRET_ACCESS_KEY}" >> ~/.aws/credentials
             
@@ -70,13 +72,20 @@ jobs:
             echo "[default]" > ~/.aws/config
             echo "region = ${AWS_REGION}" >> ~/.aws/config
             echo "output = json" >> ~/.aws/config
-            echo "" >> ~/.aws/config
-            echo "[profile circleci]" >> ~/.aws/config
-            echo "region = ${AWS_REGION}" >> ~/.aws/config
-            echo "output = json" >> ~/.aws/config
             
-            # Test the credentials
-            aws sts get-caller-identity
+            # Debug AWS config files (without showing secrets)
+            echo "Contents of ~/.aws/config:"
+            cat ~/.aws/config
+            echo "First line of ~/.aws/credentials (secrets hidden):"
+            head -n 1 ~/.aws/credentials
+            
+            # Explicitly set AWS_REGION environment variable again
+            export AWS_REGION="${AWS_REGION}"
+            echo "Re-exported AWS_REGION: '${AWS_REGION}'"
+            
+            # Test the credentials with verbose error output
+            echo "Testing AWS credentials with STS..."
+            aws sts get-caller-identity --debug || echo "STS call failed with exit code $?"
           
       # Set up Docker Buildx
       - run:
@@ -89,16 +98,21 @@ jobs:
       - run:
           name: Debug AWS Configuration
           command: |
-            echo "AWS Region: ${AWS_REGION}"
-            echo "AWS Account ID: ${AWS_ACCOUNT_ID}"
-            echo "ECR Repository: ${AWS_ECR_REPO_NAME}"
-            aws sts get-caller-identity
+            echo "AWS Region: '${AWS_REGION}'"
+            echo "AWS Account ID: '${AWS_ACCOUNT_ID}'"
+            echo "ECR Repository: '${AWS_ECR_REPO_NAME}'"
+            echo "AWS CLI version:"
+            aws --version
+            echo "AWS CLI configuration:"
             aws configure list
+            echo "Testing AWS STS access:"
+            aws sts get-caller-identity --region ${AWS_REGION} || echo "STS call failed with exit code $?"
 
       # Login to AWS ECR
       - run:
           name: Login to AWS ECR
           command: |
+            echo "Logging into ECR in region '${AWS_REGION}' with account '${AWS_ACCOUNT_ID}'"
             aws ecr get-login-password --region ${AWS_REGION} | docker login --username AWS --password-stdin ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com
 
       # Build and push nodejs-service
