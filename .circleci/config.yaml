@@ -3,6 +3,7 @@ version: 2.1
 orbs:
   aws-ecr: circleci/aws-ecr@6.15.3
   aws-cli: circleci/aws-cli@4.1
+  aws-oidc: circleci/aws-oidc@2.0.3
 
 jobs:
   build-and-test:
@@ -42,6 +43,11 @@ jobs:
       - setup_remote_docker:
           docker_layer_caching: true
           
+      # Configure AWS credentials using OIDC
+      - aws-oidc/setup-client:
+          role-arn: arn:aws:iam::${AWS_ACCOUNT_ID}:role/multiarch-polygot
+          aws-region: ${AWS_REGION}
+          
       # Install AWS CLI
       - run:
           name: Install AWS CLI
@@ -63,6 +69,7 @@ jobs:
             echo "AWS Region: ${AWS_REGION}"
             echo "AWS Account ID: ${AWS_ACCOUNT_ID}"
             echo "ECR Repository: ${AWS_ECR_REPO_NAME}"
+            aws sts get-caller-identity
             aws configure list
 
       # Login to AWS ECR
@@ -84,6 +91,22 @@ jobs:
           command: |
             cd python-service
             docker buildx build --platform linux/amd64 --push -t ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${AWS_ECR_REPO_NAME}:python-service-${CIRCLE_SHA1} .
+            
+      # Deploy to ECS
+      - run:
+          name: Update ECS services
+          command: |
+            # Update Node.js service task definition
+            NODEJS_TASK_DEF=$(aws ecs describe-task-definition --task-definition nodejs-service --query 'taskDefinition' --output json)
+            NEW_NODEJS_TASK_DEF=$(echo $NODEJS_TASK_DEF | jq '.containerDefinitions[0].image = "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${AWS_ECR_REPO_NAME}:nodejs-service-${CIRCLE_SHA1}"' | jq 'del(.taskDefinitionArn, .revision, .status, .requiresAttributes, .compatibilities, .registeredAt, .registeredBy)')
+            NEW_NODEJS_TASK_DEF_ARN=$(aws ecs register-task-definition --cli-input-json "$NEW_NODEJS_TASK_DEF" --query 'taskDefinition.taskDefinitionArn' --output text)
+            aws ecs update-service --cluster polyglot-cluster --service nodejs-service --task-definition $NEW_NODEJS_TASK_DEF_ARN --force-new-deployment
+            
+            # Update Python service task definition
+            PYTHON_TASK_DEF=$(aws ecs describe-task-definition --task-definition python-service --query 'taskDefinition' --output json)
+            NEW_PYTHON_TASK_DEF=$(echo $PYTHON_TASK_DEF | jq '.containerDefinitions[0].image = "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${AWS_ECR_REPO_NAME}:python-service-${CIRCLE_SHA1}"' | jq 'del(.taskDefinitionArn, .revision, .status, .requiresAttributes, .compatibilities, .registeredAt, .registeredBy)')
+            NEW_PYTHON_TASK_DEF_ARN=$(aws ecs register-task-definition --cli-input-json "$NEW_PYTHON_TASK_DEF" --query 'taskDefinition.taskDefinitionArn' --output text)
+            aws ecs update-service --cluster polyglot-cluster --service python-service --task-definition $NEW_PYTHON_TASK_DEF_ARN --force-new-deployment
 
 workflows:
   build-test-deploy:
