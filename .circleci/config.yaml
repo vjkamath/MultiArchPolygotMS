@@ -60,6 +60,12 @@ jobs:
             echo "AWS_ACCESS_KEY_ID exists: $(if [ -n "${AWS_ACCESS_KEY_ID}" ]; then echo "YES"; else echo "NO"; fi)"
             echo "AWS_SECRET_ACCESS_KEY exists: $(if [ -n "${AWS_SECRET_ACCESS_KEY}" ]; then echo "YES"; else echo "NO"; fi)"
             
+            # Fix typo in AWS_ACCOUNT_ID if needed
+            if [ -n "${AWWS_ACCOUNT_ID}" ] && [ -z "${AWS_ACCOUNT_ID}" ]; then
+              echo "Found AWWS_ACCOUNT_ID instead of AWS_ACCOUNT_ID, using it instead"
+              export AWS_ACCOUNT_ID="${AWWS_ACCOUNT_ID}"
+            fi
+            
             # Create AWS config directory
             mkdir -p ~/.aws
             
@@ -82,6 +88,7 @@ jobs:
             # Explicitly set AWS_REGION environment variable again
             export AWS_REGION="${AWS_REGION}"
             echo "Re-exported AWS_REGION: '${AWS_REGION}'"
+            echo "Using AWS_ACCOUNT_ID: '${AWS_ACCOUNT_ID}'"
             
             # Test the credentials with verbose error output
             echo "Testing AWS credentials with STS..."
@@ -100,6 +107,7 @@ jobs:
           command: |
             echo "AWS Region: '${AWS_REGION}'"
             echo "AWS Account ID: '${AWS_ACCOUNT_ID}'"
+            echo "AWWS Account ID: '${AWWS_ACCOUNT_ID}'"
             echo "ECR Repository: '${AWS_ECR_REPO_NAME}'"
             echo "AWS CLI version:"
             aws --version
@@ -156,9 +164,9 @@ workflows:
   build-test-deploy:
     jobs:
       - build-and-test:
-          context: AWS_REGION
+          context: MultiArch
       - deploy:
-          context: AWS_CREDENTIALS
+          context: MultiArch
           requires:
             - build-and-test
           filters:
