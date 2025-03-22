@@ -57,27 +57,23 @@ jobs:
             mkdir -p ~/.aws
             
             # Create credentials file with role assumption
-            cat > ~/.aws/credentials << EOF
-            [default]
-            role_arn = arn:aws:iam::${AWS_ACCOUNT_ID}:role/multiarch-polygot
-            source_profile = circleci
-            region = ${AWS_REGION}
-            
-            [circleci]
-            aws_access_key_id = ${AWS_ACCESS_KEY_ID}
-            aws_secret_access_key = ${AWS_SECRET_ACCESS_KEY}
-            EOF
+            echo "[default]" > ~/.aws/credentials
+            echo "role_arn = arn:aws:iam::${AWS_ACCOUNT_ID}:role/multiarch-polygot" >> ~/.aws/credentials
+            echo "source_profile = circleci" >> ~/.aws/credentials
+            echo "region = ${AWS_REGION}" >> ~/.aws/credentials
+            echo "" >> ~/.aws/credentials
+            echo "[circleci]" >> ~/.aws/credentials
+            echo "aws_access_key_id = ${AWS_ACCESS_KEY_ID}" >> ~/.aws/credentials
+            echo "aws_secret_access_key = ${AWS_SECRET_ACCESS_KEY}" >> ~/.aws/credentials
             
             # Create config file
-            cat > ~/.aws/config << EOF
-            [default]
-            region = ${AWS_REGION}
-            output = json
-            
-            [profile circleci]
-            region = ${AWS_REGION}
-            output = json
-            EOF
+            echo "[default]" > ~/.aws/config
+            echo "region = ${AWS_REGION}" >> ~/.aws/config
+            echo "output = json" >> ~/.aws/config
+            echo "" >> ~/.aws/config
+            echo "[profile circleci]" >> ~/.aws/config
+            echo "region = ${AWS_REGION}" >> ~/.aws/config
+            echo "output = json" >> ~/.aws/config
             
             # Test the credentials
             aws sts get-caller-identity
