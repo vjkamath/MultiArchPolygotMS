@@ -3,7 +3,7 @@ version: 2.1
 orbs:
   aws-ecr: circleci/aws-ecr@6.15.3
   aws-cli: circleci/aws-cli@4.1
-  
+
 jobs:
   build-and-test:
     docker:
@@ -12,14 +12,21 @@ jobs:
       - checkout
       - setup_remote_docker:
           docker_layer_caching: true
-      
+          
+      # Set up Docker Buildx
+      - run:
+          name: Set up Docker Buildx
+          command: |
+            docker context create buildx-context
+            docker buildx create --use buildx-context
+
       # Build nodejs service
       - run:
           name: Build Node.js service
           command: |
             cd nodejs-service
-            docker buildx build --platform linux/arm64 -t nodejs-service:${CIRCLE_SHA1} .
-      
+            docker buildx build --platform linux/arm64 --progress=plain -t nodejs-service:${CIRCLE_SHA1} .
+
       # Build python service
       - run:
           name: Build Python service
@@ -35,6 +42,12 @@ jobs:
       - setup_remote_docker:
           docker_layer_caching: true
 
+      # Set up Docker Buildx
+      - run:
+          name: Set up Docker Buildx
+          command: |
+            docker context create buildx-context
+            docker buildx create --use buildx-context
 
       # Debug AWS configuration
       - run:
@@ -44,7 +57,7 @@ jobs:
             echo "AWS Account ID: ${AWS_ACCOUNT_ID}"
             echo "ECR Repository: ${AWS_ECR_REPO_NAME}"
             aws configure list
-      
+
       # Login to AWS ECR
       - run:
           name: Login to AWS ECR
@@ -56,16 +69,14 @@ jobs:
           name: Build and push nodejs-service
           command: |
             cd nodejs-service
-            docker buildx --platform linux/arm64 -t ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${AWS_ECR_REPO_NAME}:nodejs-service-${CIRCLE_SHA1} .
-            docker push ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${AWS_ECR_REPO_NAME}:nodejs-service-${CIRCLE_SHA1}
+            docker buildx build --platform linux/arm64 --progress=plain --push -t ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${AWS_ECR_REPO_NAME}:nodejs-service-${CIRCLE_SHA1} .
 
       # Build and push python-service
       - run:
           name: Build and push python-service
           command: |
             cd python-service
-            docker buildx --platform linux/amd64 -t ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${AWS_ECR_REPO_NAME}:python-service-${CIRCLE_SHA1} .
-            docker push ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${AWS_ECR_REPO_NAME}:python-service-${CIRCLE_SHA1}
+            docker buildx build --platform linux/amd64 --push -t ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${AWS_ECR_REPO_NAME}:python-service-${CIRCLE_SHA1} .
 
 workflows:
   version: 2
