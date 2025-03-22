@@ -42,11 +42,13 @@ jobs:
       - setup_remote_docker:
           docker_layer_caching: true
           
-      # Install AWS CLI
+      # Install AWS CLI with specific version
       - run:
           name: Install AWS CLI
           command: |
-            pip install awscli
+            curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+            unzip awscliv2.zip
+            sudo ./aws/install
             aws --version
             
       # Configure AWS credentials directly with enhanced debugging
@@ -56,6 +58,7 @@ jobs:
             # Debug environment variables
             echo "AWS_REGION environment variable: '${AWS_REGION}'"
             echo "AWS_ACCOUNT_ID environment variable: '${AWS_ACCOUNT_ID}'"
+            echo "AWWS_ACCOUNT_ID environment variable: '${AWWS_ACCOUNT_ID}'"
             echo "AWS_ECR_REPO_NAME environment variable: '${AWS_ECR_REPO_NAME}'"
             echo "AWS_ACCESS_KEY_ID exists: $(if [ -n "${AWS_ACCESS_KEY_ID}" ]; then echo "YES"; else echo "NO"; fi)"
             echo "AWS_SECRET_ACCESS_KEY exists: $(if [ -n "${AWS_SECRET_ACCESS_KEY}" ]; then echo "YES"; else echo "NO"; fi)"
@@ -92,7 +95,7 @@ jobs:
             
             # Test the credentials with verbose error output
             echo "Testing AWS credentials with STS..."
-            aws sts get-caller-identity --debug || echo "STS call failed with exit code $?"
+            aws sts get-caller-identity || echo "STS call failed with exit code $?"
           
       # Set up Docker Buildx
       - run:
@@ -114,14 +117,21 @@ jobs:
             echo "AWS CLI configuration:"
             aws configure list
             echo "Testing AWS STS access:"
-            aws sts get-caller-identity --region ${AWS_REGION} || echo "STS call failed with exit code $?"
+            aws sts get-caller-identity || echo "STS call failed with exit code $?"
 
       # Login to AWS ECR
       - run:
           name: Login to AWS ECR
           command: |
             echo "Logging into ECR in region '${AWS_REGION}' with account '${AWS_ACCOUNT_ID}'"
-            aws ecr get-login-password --region ${AWS_REGION} | docker login --username AWS --password-stdin ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com
+            # Ensure environment variables are exported again
+            export AWS_ACCESS_KEY_ID="${AWS_ACCESS_KEY_ID}"
+            export AWS_SECRET_ACCESS_KEY="${AWS_SECRET_ACCESS_KEY}"
+            export AWS_REGION="${AWS_REGION}"
+            export AWS_DEFAULT_REGION="${AWS_REGION}"
+            
+            # Try login with explicit credentials
+            aws ecr get-login-password | docker login --username AWS --password-stdin ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com
 
       # Build and push nodejs-service
       - run:
