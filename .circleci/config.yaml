@@ -47,14 +47,21 @@ jobs:
           
       # Install jq for JSON processing
       - run:
-          name: Install jq
+          name: Install jq and other dependencies
           command: |
             sudo apt-get update
             sudo apt-get install -y jq
       
+      # Set up Docker Buildx
+      - run:
+          name: Set up Docker Buildx
+          command: |
+            docker context create buildx-context
+            docker buildx create --use buildx-context
+      
       # Set up AWS credentials using OIDC with existing role
       - aws-cli/setup:
-          role-arn: "arn:aws:iam::216693060274:role/multiarch-polygot"
+          role-arn: AWS_ROLE
           aws-region: AWS_REGION
           profile-name: "oidc-profile"
       
@@ -91,6 +98,8 @@ jobs:
           name: Build and push nodejs-service
           command: |
             cd nodejs-service
+            echo "Building and pushing Node.js service from directory: $(pwd)"
+            ls -la
             docker buildx build --platform linux/arm64 --progress=plain --push -t ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${AWS_ECR_REPO_NAME}:nodejs-service-${CIRCLE_SHA1} .
 
       # Build and push python-service
@@ -98,6 +107,8 @@ jobs:
           name: Build and push python-service
           command: |
             cd python-service
+            echo "Building and pushing Python service from directory: $(pwd)"
+            ls -la
             docker buildx build --platform linux/amd64 --push -t ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${AWS_ECR_REPO_NAME}:python-service-${CIRCLE_SHA1} .
             
       # Deploy to ECS
