@@ -54,7 +54,7 @@ jobs:
       
       # Set up AWS credentials using OIDC with existing role
       - aws-cli/setup:
-          role-arn: "arn:aws:iam::123456789012:role/multiarch-polygot"
+          role-arn: "arn:aws:iam::216693060274:role/multiarch-polygot"
           aws-region: AWS_REGION
           profile-name: "oidc-profile"
       
