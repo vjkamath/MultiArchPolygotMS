@@ -54,8 +54,9 @@ jobs:
       
       # Set up AWS credentials using OIDC with existing role
       - aws-cli/setup:
-          role-arn: ${AWS_ROLE}
-          aws-region: ${AWS_REGION}
+          role-arn: AWS_ROLE
+          aws-region: AWS_REGION
+          profile-name: "oidc-profile"
       
       # Debug AWS configuration
       - run:
@@ -72,18 +73,18 @@ jobs:
             
             # Verify AWS identity
             echo "Verifying AWS identity (should show assumed role):"
-            aws sts get-caller-identity
+            aws sts get-caller-identity --profile oidc-profile
 
       # Login to AWS ECR
       - run:
           name: Login to AWS ECR
           command: |
             echo "Logging into ECR in region '${AWS_REGION}' with account '${AWS_ACCOUNT_ID}'"
-            aws ecr get-login-password --region ${AWS_REGION} | docker login --username AWS --password-stdin ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com
+            aws ecr get-login-password --region ${AWS_REGION} --profile oidc-profile | docker login --username AWS --password-stdin ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com
             
             # List ECR repositories to verify access
             echo "Listing ECR repositories to verify access:"
-            aws ecr describe-repositories --region ${AWS_REGION} --max-items 5 || echo "Failed to list ECR repositories"
+            aws ecr describe-repositories --region ${AWS_REGION} --profile oidc-profile --max-items 5 || echo "Failed to list ECR repositories"
 
       # Build and push nodejs-service
       - run:
@@ -104,16 +105,16 @@ jobs:
           name: Update ECS services
           command: |
             # Update Node.js service task definition
-            NODEJS_TASK_DEF=$(aws ecs describe-task-definition --task-definition nodejs-service --query 'taskDefinition' --output json)
+            NODEJS_TASK_DEF=$(aws ecs describe-task-definition --task-definition nodejs-service --profile oidc-profile --query 'taskDefinition' --output json)
             NEW_NODEJS_TASK_DEF=$(echo $NODEJS_TASK_DEF | jq --arg IMAGE "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${AWS_ECR_REPO_NAME}:nodejs-service-${CIRCLE_SHA1}" '.containerDefinitions[0].image = $IMAGE' | jq 'del(.taskDefinitionArn, .revision, .status, .requiresAttributes, .compatibilities, .registeredAt, .registeredBy)')
-            NEW_NODEJS_TASK_DEF_ARN=$(aws ecs register-task-definition --cli-input-json "$NEW_NODEJS_TASK_DEF" --query 'taskDefinition.taskDefinitionArn' --output text)
-            aws ecs update-service --cluster polyglot-cluster --service nodejs-service --task-definition $NEW_NODEJS_TASK_DEF_ARN --force-new-deployment
+            NEW_NODEJS_TASK_DEF_ARN=$(aws ecs register-task-definition --cli-input-json "$NEW_NODEJS_TASK_DEF" --profile oidc-profile --query 'taskDefinition.taskDefinitionArn' --output text)
+            aws ecs update-service --cluster polyglot-cluster --service nodejs-service --task-definition $NEW_NODEJS_TASK_DEF_ARN --profile oidc-profile --force-new-deployment
             
             # Update Python service task definition
-            PYTHON_TASK_DEF=$(aws ecs describe-task-definition --task-definition python-service --query 'taskDefinition' --output json)
+            PYTHON_TASK_DEF=$(aws ecs describe-task-definition --task-definition python-service --profile oidc-profile --query 'taskDefinition' --output json)
             NEW_PYTHON_TASK_DEF=$(echo $PYTHON_TASK_DEF | jq --arg IMAGE "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${AWS_ECR_REPO_NAME}:python-service-${CIRCLE_SHA1}" '.containerDefinitions[0].image = $IMAGE' | jq 'del(.taskDefinitionArn, .revision, .status, .requiresAttributes, .compatibilities, .registeredAt, .registeredBy)')
-            NEW_PYTHON_TASK_DEF_ARN=$(aws ecs register-task-definition --cli-input-json "$NEW_PYTHON_TASK_DEF" --query 'taskDefinition.taskDefinitionArn' --output text)
-            aws ecs update-service --cluster polyglot-cluster --service python-service --task-definition $NEW_PYTHON_TASK_DEF_ARN --force-new-deployment
+            NEW_PYTHON_TASK_DEF_ARN=$(aws ecs register-task-definition --cli-input-json "$NEW_PYTHON_TASK_DEF" --profile oidc-profile --query 'taskDefinition.taskDefinitionArn' --output text)
+            aws ecs update-service --cluster polyglot-cluster --service python-service --task-definition $NEW_PYTHON_TASK_DEF_ARN --profile oidc-profile --force-new-deployment
 
 workflows:
   build-test-deploy:
