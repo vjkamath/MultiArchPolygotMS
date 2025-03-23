@@ -39,6 +39,7 @@ jobs:
       - image: cimg/python:3.9-node
     environment:
       AWS_PAGER: ""
+      AWS_SDK_LOAD_CONFIG: "true"
     steps:
       - checkout
       - setup_remote_docker:
@@ -53,25 +54,17 @@ jobs:
             sudo ./aws/install
             aws --version
             
-      # Configure AWS credentials directly with enhanced debugging
+      # Configure AWS credentials using role assumption
       - run:
-          name: Configure AWS credentials with debugging
+          name: Configure AWS credentials with role assumption
           command: |
             # Debug environment variables
             echo "AWS_REGION environment variable: '${AWS_REGION}'"
             echo "AWS_ACCOUNT_ID environment variable: '${AWS_ACCOUNT_ID}'"
             echo "AWWS_ACCOUNT_ID environment variable: '${AWWS_ACCOUNT_ID}'"
-            echo "AWS_ECR_REPO_NAME environment variable: '${AWS_ECR_REPO_NAME}'"
-            echo "AWS_ACCESS_KEY_ID length: $(if [ -n "${AWS_ACCESS_KEY_ID}" ]; then echo ${#AWS_ACCESS_KEY_ID}; else echo "0"; fi)"
-            echo "AWS_SECRET_ACCESS_KEY length: $(if [ -n "${AWS_SECRET_ACCESS_KEY}" ]; then echo ${#AWS_SECRET_ACCESS_KEY}; else echo "0"; fi)"
-            
-            # Check if AWS_ACCESS_KEY_ID starts with the typical pattern
-            if [ -n "${AWS_ACCESS_KEY_ID}" ]; then
-              echo "AWS_ACCESS_KEY_ID starts with: ${AWS_ACCESS_KEY_ID:0:4}..."
-              if [[ ! "${AWS_ACCESS_KEY_ID}" =~ ^AKIA || ! "${AWS_ACCESS_KEY_ID}" =~ ^ASIA ]]; then
-                echo "WARNING: AWS_ACCESS_KEY_ID does not start with typical AWS key prefix (AKIA or ASIA)"
-              fi
-            fi
+            echo "AWS_ROLE environment variable: '${AWS_ROLE}'"
+            echo "AWS_ACCESS_KEY_ID exists: $(if [ -n "${AWS_ACCESS_KEY_ID}" ]; then echo "YES"; else echo "NO"; fi)"
+            echo "AWS_SECRET_ACCESS_KEY exists: $(if [ -n "${AWS_SECRET_ACCESS_KEY}" ]; then echo "YES"; else echo "NO"; fi)"
             
             # Fix typo in AWS_ACCOUNT_ID if needed
             if [ -n "${AWWS_ACCOUNT_ID}" ] && [ -z "${AWS_ACCOUNT_ID}" ]; then
@@ -92,23 +85,23 @@ jobs:
             echo "region = ${AWS_REGION}" >> ~/.aws/config
             echo "output = json" >> ~/.aws/config
             
-            # Debug AWS config files (without showing secrets)
-            echo "Contents of ~/.aws/config:"
-            cat ~/.aws/config
-            echo "First line of ~/.aws/credentials (secrets hidden):"
-            head -n 1 ~/.aws/credentials
+            # Assume the specified role using STS
+            echo "Assuming role: ${AWS_ROLE}"
+            TEMP_CREDS=$(aws sts assume-role --role-arn ${AWS_ROLE} --role-session-name "CircleCI-${CIRCLE_BUILD_NUM}" --query "Credentials" --output json)
             
-            # Explicitly set AWS environment variables
-            export AWS_REGION="${AWS_REGION}"
-            export AWS_DEFAULT_REGION="${AWS_REGION}"
-            export AWS_ACCESS_KEY_ID="${AWS_ACCESS_KEY_ID}"
-            export AWS_SECRET_ACCESS_KEY="${AWS_SECRET_ACCESS_KEY}"
+            # Extract credentials from the response
+            export AWS_ACCESS_KEY_ID=$(echo $TEMP_CREDS | jq -r '.AccessKeyId')
+            export AWS_SECRET_ACCESS_KEY=$(echo $TEMP_CREDS | jq -r '.SecretAccessKey')
+            export AWS_SESSION_TOKEN=$(echo $TEMP_CREDS | jq -r '.SessionToken')
             
-            echo "Re-exported AWS_REGION: '${AWS_REGION}'"
-            echo "Using AWS_ACCOUNT_ID: '${AWS_ACCOUNT_ID}'"
+            # Update credentials file with temporary credentials
+            echo "[default]" > ~/.aws/credentials
+            echo "aws_access_key_id = ${AWS_ACCESS_KEY_ID}" >> ~/.aws/credentials
+            echo "aws_secret_access_key = ${AWS_SECRET_ACCESS_KEY}" >> ~/.aws/credentials
+            echo "aws_session_token = ${AWS_SESSION_TOKEN}" >> ~/.aws/credentials
             
-            # Test the credentials with verbose error output
-            echo "Testing AWS credentials with STS..."
+            # Test the assumed role credentials
+            echo "Testing assumed role credentials with STS..."
             aws sts get-caller-identity || echo "STS call failed with exit code $?"
           
       # Set up Docker Buildx
@@ -118,37 +111,43 @@ jobs:
             docker context create buildx-context
             docker buildx create --use buildx-context
 
-      # Debug AWS configuration
+      # Debug AWS configuration with assumed role
       - run:
           name: Debug AWS Configuration
           command: |
             echo "AWS Region: '${AWS_REGION}'"
             echo "AWS Account ID: '${AWS_ACCOUNT_ID}'"
-            echo "AWWS Account ID: '${AWWS_ACCOUNT_ID}'"
+            echo "AWS Role: '${AWS_ROLE}'"
             echo "ECR Repository: '${AWS_ECR_REPO_NAME}'"
             echo "AWS CLI version:"
             aws --version
             echo "AWS CLI configuration:"
             aws configure list
             
+            # Check caller identity with assumed role
+            echo "Checking caller identity with assumed role:"
+            aws sts get-caller-identity
+            
             # Check environment variables
             echo "Environment variables:"
             env | grep -i aws
 
-      # Login to AWS ECR
+      # Login to AWS ECR using assumed role
       - run:
           name: Login to AWS ECR
           command: |
             echo "Logging into ECR in region '${AWS_REGION}' with account '${AWS_ACCOUNT_ID}'"
-            # Ensure environment variables are exported again
-            export AWS_ACCESS_KEY_ID="${AWS_ACCESS_KEY_ID}"
-            export AWS_SECRET_ACCESS_KEY="${AWS_SECRET_ACCESS_KEY}"
+            # Ensure environment variables are available
             export AWS_REGION="${AWS_REGION}"
             export AWS_DEFAULT_REGION="${AWS_REGION}"
             
-            # Simple approach using get-login-password piped to docker login
-            echo "Using get-login-password for ECR authentication"
+            # Get ECR login token and login to Docker
+            echo "Using get-login-password for ECR authentication with assumed role"
             aws ecr get-login-password --region ${AWS_REGION} | docker login --username AWS --password-stdin ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com
+            
+            # List ECR repositories to verify access
+            echo "Listing ECR repositories to verify access:"
+            aws ecr describe-repositories --region ${AWS_REGION} || echo "Failed to list ECR repositories"
 
       # Build and push nodejs-service
       - run:
