@@ -61,7 +61,7 @@ jobs:
       
       # Set up AWS credentials using OIDC with existing role
       - aws-cli/setup:
-          role-arn: "arn:aws:iam::216693060274:role/multiarch-polygot"
+          role-arn: AWS_ROLE
           aws-region: AWS_REGION
           profile-name: "oidc-profile"
       
@@ -72,7 +72,8 @@ jobs:
             echo "AWS Region: '${AWS_REGION}'"
             echo "AWS Account ID: '${AWS_ACCOUNT_ID}'"
             echo "AWS Role: '${AWS_ROLE}'"
-            echo "ECR Repository: '${AWS_ECR_REPO_NAME}'"
+            echo "Node.js ECR Repository: '${NODEJS_ECR_REPO_NAME}'"
+            echo "Python ECR Repository: '${PYTHON_ECR_REPO_NAME}'"
             echo "AWS CLI version:"
             aws --version
             echo "AWS CLI configuration:"
@@ -100,7 +101,18 @@ jobs:
             cd nodejs-service
             echo "Building and pushing Node.js service from directory: $(pwd)"
             ls -la
-            docker buildx build --platform linux/arm64 --progress=plain --push -t ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${AWS_ECR_REPO_NAME}:nodejs-service-${CIRCLE_SHA1} .
+            
+            # Define the full image tag
+            NODEJS_IMAGE_TAG="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${NODEJS_ECR_REPO_NAME}:${CIRCLE_SHA1}"
+            echo "Building image: $NODEJS_IMAGE_TAG"
+            
+            # Build and push using separate commands to avoid issues
+            docker buildx build \
+              --platform linux/arm64 \
+              --progress=plain \
+              -t $NODEJS_IMAGE_TAG \
+              --push \
+              .
 
       # Build and push python-service
       - run:
@@ -109,7 +121,18 @@ jobs:
             cd python-service
             echo "Building and pushing Python service from directory: $(pwd)"
             ls -la
-            docker buildx build --platform linux/amd64 --push -t ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${AWS_ECR_REPO_NAME}:python-service-${CIRCLE_SHA1} .
+            
+            # Define the full image tag
+            PYTHON_IMAGE_TAG="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${PYTHON_ECR_REPO_NAME}:${CIRCLE_SHA1}"
+            echo "Building image: $PYTHON_IMAGE_TAG"
+            
+            # Build and push using separate commands to avoid issues
+            docker buildx build \
+              --platform linux/amd64 \
+              --progress=plain \
+              -t $PYTHON_IMAGE_TAG \
+              --push \
+              .
             
       # Deploy to ECS
       - run:
@@ -117,13 +140,13 @@ jobs:
           command: |
             # Update Node.js service task definition
             NODEJS_TASK_DEF=$(aws ecs describe-task-definition --task-definition nodejs-service --profile oidc-profile --query 'taskDefinition' --output json)
-            NEW_NODEJS_TASK_DEF=$(echo $NODEJS_TASK_DEF | jq --arg IMAGE "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${AWS_ECR_REPO_NAME}:nodejs-service-${CIRCLE_SHA1}" '.containerDefinitions[0].image = $IMAGE' | jq 'del(.taskDefinitionArn, .revision, .status, .requiresAttributes, .compatibilities, .registeredAt, .registeredBy)')
+            NEW_NODEJS_TASK_DEF=$(echo $NODEJS_TASK_DEF | jq --arg IMAGE "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${NODEJS_ECR_REPO_NAME}:${CIRCLE_SHA1}" '.containerDefinitions[0].image = $IMAGE' | jq 'del(.taskDefinitionArn, .revision, .status, .requiresAttributes, .compatibilities, .registeredAt, .registeredBy)')
             NEW_NODEJS_TASK_DEF_ARN=$(aws ecs register-task-definition --cli-input-json "$NEW_NODEJS_TASK_DEF" --profile oidc-profile --query 'taskDefinition.taskDefinitionArn' --output text)
             aws ecs update-service --cluster polyglot-cluster --service nodejs-service --task-definition $NEW_NODEJS_TASK_DEF_ARN --profile oidc-profile --force-new-deployment
             
             # Update Python service task definition
             PYTHON_TASK_DEF=$(aws ecs describe-task-definition --task-definition python-service --profile oidc-profile --query 'taskDefinition' --output json)
-            NEW_PYTHON_TASK_DEF=$(echo $PYTHON_TASK_DEF | jq --arg IMAGE "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${AWS_ECR_REPO_NAME}:python-service-${CIRCLE_SHA1}" '.containerDefinitions[0].image = $IMAGE' | jq 'del(.taskDefinitionArn, .revision, .status, .requiresAttributes, .compatibilities, .registeredAt, .registeredBy)')
+            NEW_PYTHON_TASK_DEF=$(echo $PYTHON_TASK_DEF | jq --arg IMAGE "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${PYTHON_ECR_REPO_NAME}:${CIRCLE_SHA1}" '.containerDefinitions[0].image = $IMAGE' | jq 'del(.taskDefinitionArn, .revision, .status, .requiresAttributes, .compatibilities, .registeredAt, .registeredBy)')
             NEW_PYTHON_TASK_DEF_ARN=$(aws ecs register-task-definition --cli-input-json "$NEW_PYTHON_TASK_DEF" --profile oidc-profile --query 'taskDefinition.taskDefinitionArn' --output text)
             aws ecs update-service --cluster polyglot-cluster --service python-service --task-definition $NEW_PYTHON_TASK_DEF_ARN --profile oidc-profile --force-new-deployment
 
