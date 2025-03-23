@@ -54,9 +54,9 @@ jobs:
             sudo ./aws/install
             aws --version
             
-      # Configure AWS credentials using role assumption
+      # Configure AWS credentials with detailed debugging
       - run:
-          name: Configure AWS credentials with role assumption
+          name: Configure AWS credentials with detailed debugging
           command: |
             # Debug environment variables
             echo "AWS_REGION environment variable: '${AWS_REGION}'"
@@ -85,24 +85,49 @@ jobs:
             echo "region = ${AWS_REGION}" >> ~/.aws/config
             echo "output = json" >> ~/.aws/config
             
-            # Assume the specified role using STS
-            echo "Assuming role: ${AWS_ROLE}"
-            TEMP_CREDS=$(aws sts assume-role --role-arn ${AWS_ROLE} --role-session-name "CircleCI-${CIRCLE_BUILD_NUM}" --query "Credentials" --output json)
+            # Test base credentials first
+            echo "Testing base AWS credentials..."
+            if aws sts get-caller-identity; then
+              echo "✅ Base AWS credentials are valid"
+              
+              # Only try to assume role if base credentials work and AWS_ROLE is provided
+              if [ -n "${AWS_ROLE}" ]; then
+                echo "Attempting to assume role: ${AWS_ROLE}"
+                
+                # Try to assume the role and capture both output and exit code
+                TEMP_CREDS=$(aws sts assume-role --role-arn "${AWS_ROLE}" --role-session-name "CircleCI-${CIRCLE_BUILD_NUM}" --query "Credentials" --output json)
+                ASSUME_ROLE_EXIT_CODE=$?
+                
+                if [ $ASSUME_ROLE_EXIT_CODE -eq 0 ]; then
+                  echo "✅ Successfully assumed role"
+                  
+                  # Extract credentials from the response
+                  export AWS_ACCESS_KEY_ID=$(echo $TEMP_CREDS | jq -r '.AccessKeyId')
+                  export AWS_SECRET_ACCESS_KEY=$(echo $TEMP_CREDS | jq -r '.SecretAccessKey')
+                  export AWS_SESSION_TOKEN=$(echo $TEMP_CREDS | jq -r '.SessionToken')
+                  
+                  # Update credentials file with temporary credentials
+                  echo "[default]" > ~/.aws/credentials
+                  echo "aws_access_key_id = ${AWS_ACCESS_KEY_ID}" >> ~/.aws/credentials
+                  echo "aws_secret_access_key = ${AWS_SECRET_ACCESS_KEY}" >> ~/.aws/credentials
+                  echo "aws_session_token = ${AWS_SESSION_TOKEN}" >> ~/.aws/credentials
+                  
+                  echo "Using assumed role credentials"
+                else
+                  echo "❌ Failed to assume role. Exit code: $ASSUME_ROLE_EXIT_CODE"
+                  echo "Continuing with base credentials instead"
+                fi
+              else
+                echo "No AWS_ROLE specified, continuing with base credentials"
+              fi
+            else
+              echo "❌ Base AWS credentials are invalid. Please check your AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY"
+              exit 1
+            fi
             
-            # Extract credentials from the response
-            export AWS_ACCESS_KEY_ID=$(echo $TEMP_CREDS | jq -r '.AccessKeyId')
-            export AWS_SECRET_ACCESS_KEY=$(echo $TEMP_CREDS | jq -r '.SecretAccessKey')
-            export AWS_SESSION_TOKEN=$(echo $TEMP_CREDS | jq -r '.SessionToken')
-            
-            # Update credentials file with temporary credentials
-            echo "[default]" > ~/.aws/credentials
-            echo "aws_access_key_id = ${AWS_ACCESS_KEY_ID}" >> ~/.aws/credentials
-            echo "aws_secret_access_key = ${AWS_SECRET_ACCESS_KEY}" >> ~/.aws/credentials
-            echo "aws_session_token = ${AWS_SESSION_TOKEN}" >> ~/.aws/credentials
-            
-            # Test the assumed role credentials
-            echo "Testing assumed role credentials with STS..."
-            aws sts get-caller-identity || echo "STS call failed with exit code $?"
+            # Final credential verification
+            echo "Final credential verification:"
+            aws sts get-caller-identity
           
       # Set up Docker Buildx
       - run:
@@ -111,7 +136,7 @@ jobs:
             docker context create buildx-context
             docker buildx create --use buildx-context
 
-      # Debug AWS configuration with assumed role
+      # Debug AWS configuration
       - run:
           name: Debug AWS Configuration
           command: |
@@ -124,30 +149,42 @@ jobs:
             echo "AWS CLI configuration:"
             aws configure list
             
-            # Check caller identity with assumed role
-            echo "Checking caller identity with assumed role:"
-            aws sts get-caller-identity
+            # Check if we can access AWS resources
+            echo "Testing AWS access:"
+            aws sts get-caller-identity || echo "Failed to get caller identity"
             
-            # Check environment variables
-            echo "Environment variables:"
-            env | grep -i aws
+            # Check if we can list S3 buckets (basic permission test)
+            echo "Testing S3 access (basic permission test):"
+            aws s3 ls || echo "Failed to list S3 buckets"
 
-      # Login to AWS ECR using assumed role
+      # Login to AWS ECR with fallback options
       - run:
           name: Login to AWS ECR
           command: |
             echo "Logging into ECR in region '${AWS_REGION}' with account '${AWS_ACCOUNT_ID}'"
-            # Ensure environment variables are available
-            export AWS_REGION="${AWS_REGION}"
-            export AWS_DEFAULT_REGION="${AWS_REGION}"
             
             # Get ECR login token and login to Docker
-            echo "Using get-login-password for ECR authentication with assumed role"
-            aws ecr get-login-password --region ${AWS_REGION} | docker login --username AWS --password-stdin ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com
+            echo "Using get-login-password for ECR authentication"
+            if aws ecr get-login-password --region ${AWS_REGION} | docker login --username AWS --password-stdin ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com; then
+              echo "✅ Successfully logged into ECR"
+            else
+              echo "❌ Failed to log into ECR using get-login-password"
+              echo "Trying alternative login method..."
+              
+              # Try alternative login method
+              LOGIN_CMD=$(aws ecr get-login --no-include-email --region ${AWS_REGION})
+              if [ -n "$LOGIN_CMD" ]; then
+                echo "Executing ECR login command"
+                eval $LOGIN_CMD
+              else
+                echo "❌ Failed to get ECR login command"
+                exit 1
+              fi
+            fi
             
             # List ECR repositories to verify access
             echo "Listing ECR repositories to verify access:"
-            aws ecr describe-repositories --region ${AWS_REGION} || echo "Failed to list ECR repositories"
+            aws ecr describe-repositories --region ${AWS_REGION} --max-items 5 || echo "Failed to list ECR repositories"
 
       # Build and push nodejs-service
       - run:
