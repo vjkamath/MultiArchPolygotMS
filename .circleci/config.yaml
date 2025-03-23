@@ -1,8 +1,8 @@
 version: 2.1
 
 orbs:
-  aws-ecr: circleci/aws-ecr@6.15.3
-  aws-cli: circleci/aws-cli@4.1
+  aws-cli: circleci/aws-cli@3.1
+  aws-ecr: circleci/aws-ecr@8.2
 
 jobs:
   build-and-test:
@@ -45,97 +45,18 @@ jobs:
       - setup_remote_docker:
           docker_layer_caching: true
           
-      # Install AWS CLI with specific version
+      # Install jq for JSON processing
       - run:
-          name: Install AWS CLI
+          name: Install jq
           command: |
-            curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
-            unzip awscliv2.zip
-            sudo ./aws/install
-            aws --version
-            
-      # Configure AWS credentials with detailed debugging
-      - run:
-          name: Configure AWS credentials with detailed debugging
-          command: |
-            # Debug environment variables
-            echo "AWS_REGION environment variable: '${AWS_REGION}'"
-            echo "AWS_ACCOUNT_ID environment variable: '${AWS_ACCOUNT_ID}'"
-            echo "AWWS_ACCOUNT_ID environment variable: '${AWWS_ACCOUNT_ID}'"
-            echo "AWS_ROLE environment variable: '${AWS_ROLE}'"
-            echo "AWS_ACCESS_KEY_ID exists: $(if [ -n "${AWS_ACCESS_KEY_ID}" ]; then echo "YES"; else echo "NO"; fi)"
-            echo "AWS_SECRET_ACCESS_KEY exists: $(if [ -n "${AWS_SECRET_ACCESS_KEY}" ]; then echo "YES"; else echo "NO"; fi)"
-            
-            # Fix typo in AWS_ACCOUNT_ID if needed
-            if [ -n "${AWWS_ACCOUNT_ID}" ] && [ -z "${AWS_ACCOUNT_ID}" ]; then
-              echo "Found AWWS_ACCOUNT_ID instead of AWS_ACCOUNT_ID, using it instead"
-              export AWS_ACCOUNT_ID="${AWWS_ACCOUNT_ID}"
-            fi
-            
-            # Create AWS config directory
-            mkdir -p ~/.aws
-            
-            # Create credentials file with direct credentials
-            echo "[default]" > ~/.aws/credentials
-            echo "aws_access_key_id = ${AWS_ACCESS_KEY_ID}" >> ~/.aws/credentials
-            echo "aws_secret_access_key = ${AWS_SECRET_ACCESS_KEY}" >> ~/.aws/credentials
-            
-            # Create config file
-            echo "[default]" > ~/.aws/config
-            echo "region = ${AWS_REGION}" >> ~/.aws/config
-            echo "output = json" >> ~/.aws/config
-            
-            # Test base credentials first
-            echo "Testing base AWS credentials..."
-            if aws sts get-caller-identity; then
-              echo "✅ Base AWS credentials are valid"
-              
-              # Only try to assume role if base credentials work and AWS_ROLE is provided
-              if [ -n "${AWS_ROLE}" ]; then
-                echo "Attempting to assume role: ${AWS_ROLE}"
-                
-                # Try to assume the role and capture both output and exit code
-                TEMP_CREDS=$(aws sts assume-role --role-arn "${AWS_ROLE}" --role-session-name "CircleCI-${CIRCLE_BUILD_NUM}" --query "Credentials" --output json)
-                ASSUME_ROLE_EXIT_CODE=$?
-                
-                if [ $ASSUME_ROLE_EXIT_CODE -eq 0 ]; then
-                  echo "✅ Successfully assumed role"
-                  
-                  # Extract credentials from the response
-                  export AWS_ACCESS_KEY_ID=$(echo $TEMP_CREDS | jq -r '.AccessKeyId')
-                  export AWS_SECRET_ACCESS_KEY=$(echo $TEMP_CREDS | jq -r '.SecretAccessKey')
-                  export AWS_SESSION_TOKEN=$(echo $TEMP_CREDS | jq -r '.SessionToken')
-                  
-                  # Update credentials file with temporary credentials
-                  echo "[default]" > ~/.aws/credentials
-                  echo "aws_access_key_id = ${AWS_ACCESS_KEY_ID}" >> ~/.aws/credentials
-                  echo "aws_secret_access_key = ${AWS_SECRET_ACCESS_KEY}" >> ~/.aws/credentials
-                  echo "aws_session_token = ${AWS_SESSION_TOKEN}" >> ~/.aws/credentials
-                  
-                  echo "Using assumed role credentials"
-                else
-                  echo "❌ Failed to assume role. Exit code: $ASSUME_ROLE_EXIT_CODE"
-                  echo "Continuing with base credentials instead"
-                fi
-              else
-                echo "No AWS_ROLE specified, continuing with base credentials"
-              fi
-            else
-              echo "❌ Base AWS credentials are invalid. Please check your AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY"
-              exit 1
-            fi
-            
-            # Final credential verification
-            echo "Final credential verification:"
-            aws sts get-caller-identity
-          
-      # Set up Docker Buildx
-      - run:
-          name: Set up Docker Buildx
-          command: |
-            docker context create buildx-context
-            docker buildx create --use buildx-context
-
+            sudo apt-get update
+            sudo apt-get install -y jq
+      
+      # Set up AWS credentials using OIDC with existing role
+      - aws-cli/setup:
+          role-arn: ${AWS_ROLE}
+          aws-region: ${AWS_REGION}
+      
       # Debug AWS configuration
       - run:
           name: Debug AWS Configuration
@@ -149,38 +70,16 @@ jobs:
             echo "AWS CLI configuration:"
             aws configure list
             
-            # Check if we can access AWS resources
-            echo "Testing AWS access:"
-            aws sts get-caller-identity || echo "Failed to get caller identity"
-            
-            # Check if we can list S3 buckets (basic permission test)
-            echo "Testing S3 access (basic permission test):"
-            aws s3 ls || echo "Failed to list S3 buckets"
+            # Verify AWS identity
+            echo "Verifying AWS identity (should show assumed role):"
+            aws sts get-caller-identity
 
-      # Login to AWS ECR with fallback options
+      # Login to AWS ECR
       - run:
           name: Login to AWS ECR
           command: |
             echo "Logging into ECR in region '${AWS_REGION}' with account '${AWS_ACCOUNT_ID}'"
-            
-            # Get ECR login token and login to Docker
-            echo "Using get-login-password for ECR authentication"
-            if aws ecr get-login-password --region ${AWS_REGION} | docker login --username AWS --password-stdin ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com; then
-              echo "✅ Successfully logged into ECR"
-            else
-              echo "❌ Failed to log into ECR using get-login-password"
-              echo "Trying alternative login method..."
-              
-              # Try alternative login method
-              LOGIN_CMD=$(aws ecr get-login --no-include-email --region ${AWS_REGION})
-              if [ -n "$LOGIN_CMD" ]; then
-                echo "Executing ECR login command"
-                eval $LOGIN_CMD
-              else
-                echo "❌ Failed to get ECR login command"
-                exit 1
-              fi
-            fi
+            aws ecr get-login-password --region ${AWS_REGION} | docker login --username AWS --password-stdin ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com
             
             # List ECR repositories to verify access
             echo "Listing ECR repositories to verify access:"
@@ -199,13 +98,6 @@ jobs:
           command: |
             cd python-service
             docker buildx build --platform linux/amd64 --push -t ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${AWS_ECR_REPO_NAME}:python-service-${CIRCLE_SHA1} .
-            
-      # Install jq for JSON processing
-      - run:
-          name: Install jq
-          command: |
-            sudo apt-get update
-            sudo apt-get install -y jq
             
       # Deploy to ECS
       - run:
