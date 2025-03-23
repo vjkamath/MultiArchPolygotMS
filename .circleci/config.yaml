@@ -146,15 +146,9 @@ jobs:
             export AWS_REGION="${AWS_REGION}"
             export AWS_DEFAULT_REGION="${AWS_REGION}"
             
-            # Non-interactive login using docker credentials helper
-            mkdir -p ~/.docker
-            echo '{"credsStore":"ecr-login"}' > ~/.docker/config.json
-            
-            # Alternative approach using get-login with no-include-email
-            echo "Trying alternative ECR login approach"
-            LOGIN_COMMAND=$(aws ecr get-login --no-include-email --region ${AWS_REGION})
-            echo "Executing login command (password hidden)"
-            $LOGIN_COMMAND
+            # Simple approach using get-login-password piped to docker login
+            echo "Using get-login-password for ECR authentication"
+            aws ecr get-login-password --region ${AWS_REGION} | docker login --username AWS --password-stdin ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com
 
       # Build and push nodejs-service
       - run:
