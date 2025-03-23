@@ -60,7 +60,7 @@ jobs:
       
       # Debug AWS configuration
       - run:
-          name: Debug AWS Configuration
+          name: Debugs AWS Configuration
           command: |
             echo "AWS Region: '${AWS_REGION}'"
             echo "AWS Account ID: '${AWS_ACCOUNT_ID}'"
