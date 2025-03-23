@@ -65,7 +65,7 @@ jobs:
           aws-region: AWS_REGION
           profile-name: "oidc-profile"
       
-      # Debug AWS configuration
+      # Debugs AWS configuration
       - run:
           name: Debug AWS Configuration
           command: |
