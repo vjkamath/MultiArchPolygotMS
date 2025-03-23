@@ -65,7 +65,7 @@ jobs:
           aws-region: AWS_REGION
           profile-name: "oidc-profile"
       
-      # Debugs AWS configuration
+      # Debug AWS configuration
       - run:
           name: Debug AWS Configuration
           command: |
@@ -140,7 +140,7 @@ jobs:
           command: |
             # Update Node.js service task definition
             NODEJS_TASK_DEF=$(aws ecs describe-task-definition --task-definition nodejs-service --profile oidc-profile --query 'taskDefinition' --output json)
-            NEW_NODEJS_TASK_DEF=$(echo $NODEJS_TASK_DEF | jq --arg IMAGE "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${NODEJS_ECR_REPO_NAME}:${CIRCLE_SHA1}" '.containerDefinitions[0].image = $IMAGE' | jq 'del(.taskDefinitionArn, .revision, .status, .requiresAttributes, .compatibilities, .registeredAt, .registeredBy)')
+            NEW_NODEJS_TASK_DEF=$(echo $NODEJS_TASK_DEF | jq --arg IMAGE "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${NODEJS_ECR_REPO_NAME}:${CIRCLE_SHA1}" '.containerDefinitions[0].image = $IMAGE' | jq 'del(.taskDefinitionArn, .revision, .status, .requiresAttributes, .compatibilities, .registeredAt, .registeredBy)' | jq '.containerDefinitions[0].healthCheck.startPeriod = 60')
             NEW_NODEJS_TASK_DEF_ARN=$(aws ecs register-task-definition --cli-input-json "$NEW_NODEJS_TASK_DEF" --profile oidc-profile --query 'taskDefinition.taskDefinitionArn' --output text)
             aws ecs update-service --cluster polyglot-cluster --service nodejs-service --task-definition $NEW_NODEJS_TASK_DEF_ARN --profile oidc-profile --force-new-deployment
             
